@@ -5,6 +5,6 @@ scipy
 opencv-python
 scikit-image
 scikit-learn>=0.18
-theano>=0.8
--e git://github.com/Lasagne/Lasagne.git#egg=lasagne
+pytorch
+torchvision
 -e git://github.com/Britefury/batchup.git#egg=batchup
