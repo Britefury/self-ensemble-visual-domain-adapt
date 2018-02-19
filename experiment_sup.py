@@ -3,6 +3,7 @@ import click
 
 @click.command()
 @click.option('--exp', type=click.Choice(['svhn_mnist', 'mnist_svhn',
+                                          'svhn_mnist_rgb', 'mnist_svhn_rgb',
                                           'cifar_stl', 'stl_cifar',
                                           'mnist_usps', 'usps_mnist',
                                           'syndigits_svhn', 'svhn_syndigits',
@@ -81,6 +82,12 @@ def experiment(exp, arch, learning_rate,
         elif exp == 'mnist_svhn':
             d_source = data_loaders.load_mnist(invert=False, zero_centre=False, pad32=True)
             d_target = data_loaders.load_svhn(zero_centre=False, greyscale=True, val=False)
+        elif exp == 'svhn_mnist_rgb':
+            d_source = data_loaders.load_svhn(zero_centre=False, greyscale=False)
+            d_target = data_loaders.load_mnist(invert=False, zero_centre=False, pad32=True, val=False, rgb=True)
+        elif exp == 'mnist_svhn_rgb':
+            d_source = data_loaders.load_mnist(invert=False, zero_centre=False, pad32=True, rgb=True)
+            d_target = data_loaders.load_svhn(zero_centre=False, greyscale=False, val=False)
         elif exp == 'cifar_stl':
             d_source = data_loaders.load_cifar10(range_01=False)
             d_target = data_loaders.load_stl(zero_centre=False, val=False)
@@ -127,7 +134,7 @@ def experiment(exp, arch, learning_rate,
                 arch = 'mnist-bn-32-64-256'
             if exp in {'svhn_mnist', 'mnist_svhn'}:
                 arch = 'grey-32-64-128-gp'
-            if exp in {'cifar_stl', 'stl_cifar', 'syndigits_svhn', 'svhn_syndigits'}:
+            if exp in {'cifar_stl', 'stl_cifar', 'syndigits_svhn', 'svhn_syndigits', 'svhn_mnist_rgb', 'mnist_svhn_rgb'}:
                 arch = 'rgb-48-96-192-gp'
             if exp in {'synsigns_gtsrb', 'gtsrb_synsigns'}:
                 arch = 'rgb40-48-96-192-384-gp'
@@ -216,6 +223,7 @@ def experiment(exp, arch, learning_rate,
                     f.write(text + '\n')
                     f.flush()
                     f.close()
+        cmdline_helpers.ensure_containing_dir_exists(log_file)
 
         # Report setttings
         log('sys.argv={}'.format(sys.argv))

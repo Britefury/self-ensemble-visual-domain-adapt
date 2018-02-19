@@ -11,6 +11,7 @@ import click
 
 @click.command()
 @click.option('--exp', type=click.Choice(['svhn_mnist', 'mnist_svhn',
+                                          'svhn_mnist_rgb', 'mnist_svhn_rgb',
                                           'cifar_stl', 'stl_cifar',
                                           'mnist_usps', 'usps_mnist',
                                           'syndigits_svhn',
@@ -35,8 +36,8 @@ import click
               help='Weight of class balancing component of unsupervised loss')
 @click.option('--cls_balance_loss', type=click.Choice(['bce', 'log', 'bug']), default='bce',
               help='Class balancing loss function')
-@click.option('--unsup_data', type=click.Choice(['target', 'both', 'both_together']), default='target',
-              help='Usupervised data to use')
+@click.option('--combine_batches', is_flag=True, default=False,
+              help='Build batches from both source and target samples')
 @click.option('--learning_rate', type=float, default=0.001, help='learning rate (Adam)')
 @click.option('--standardise_samples', default=False, is_flag=True, help='standardise samples (0 mean unit var)')
 @click.option('--src_affine_std', type=float, default=0.1, help='src aug xform: random affine transform std-dev')
@@ -59,14 +60,6 @@ import click
               help='tgt aug colour; intensity scale range `low:high` (-1.5:1.5 for mnist-svhn)')
 @click.option('--tgt_intens_offset_range', type=str, default='',
               help='tgt aug colour; intensity offset range `low:high` (-0.5:0.5 for mnist-svhn)')
-@click.option('--tgt_cons_affine', is_flag=True, default=False, help='constrain aug xform affine')
-@click.option('--tgt_cons_xlat', is_flag=True, default=False, help='constrain aug xform translate')
-@click.option('--tgt_cons_hflip', is_flag=True, default=False, help='constrain aug xform h-flip')
-@click.option('--tgt_cons_intens_flip', is_flag=True, default=False, help='constrain aug colour intensity flip')
-@click.option('--tgt_cons_intens_scale', is_flag=True, default=False,
-              help='constrain tgt aug colour intensity scale')
-@click.option('--tgt_cons_intens_offset', is_flag=True, default=False,
-              help='constrain tgt aug colour intensity offset')
 @click.option('--tgt_gaussian_noise_std', type=float, default=0.1,
               help='tgt aug: standard deviation of Gaussian noise to add to samples')
 @click.option('--num_epochs', type=int, default=200, help='number of epochs')
@@ -79,14 +72,12 @@ import click
 @click.option('--device', type=int, default=0, help='Device')
 def experiment(exp, arch, loss, double_softmax, confidence_thresh, rampup, teacher_alpha,
                unsup_weight, cls_balance, cls_balance_loss,
-               unsup_data,
+               combine_batches,
                learning_rate, standardise_samples,
                src_affine_std, src_xlat_range, src_hflip,
                src_intens_flip, src_intens_scale_range, src_intens_offset_range, src_gaussian_noise_std,
                tgt_affine_std, tgt_xlat_range, tgt_hflip,
-               tgt_intens_flip, tgt_intens_scale_range, tgt_intens_offset_range,
-               tgt_cons_affine, tgt_cons_xlat, tgt_cons_hflip,
-               tgt_cons_intens_flip, tgt_cons_intens_scale, tgt_cons_intens_offset, tgt_gaussian_noise_std,
+               tgt_intens_flip, tgt_intens_scale_range, tgt_intens_offset_range, tgt_gaussian_noise_std,
                num_epochs, batch_size, epoch_size, seed,
                log_file, model_file, device):
     settings = locals().copy()
@@ -140,6 +131,12 @@ def experiment(exp, arch, loss, double_softmax, confidence_thresh, rampup, teach
         elif exp == 'mnist_svhn':
             d_source = data_loaders.load_mnist(invert=False, zero_centre=False, pad32=True)
             d_target = data_loaders.load_svhn(zero_centre=False, greyscale=True, val=False)
+        elif exp == 'svhn_mnist_rgb':
+            d_source = data_loaders.load_svhn(zero_centre=False, greyscale=False)
+            d_target = data_loaders.load_mnist(invert=False, zero_centre=False, pad32=True, val=False, rgb=True)
+        elif exp == 'mnist_svhn_rgb':
+            d_source = data_loaders.load_mnist(invert=False, zero_centre=False, pad32=True, rgb=True)
+            d_target = data_loaders.load_svhn(zero_centre=False, greyscale=False, val=False)
         elif exp == 'cifar_stl':
             d_source = data_loaders.load_cifar10(range_01=False)
             d_target = data_loaders.load_stl(zero_centre=False, val=False)
@@ -180,7 +177,7 @@ def experiment(exp, arch, loss, double_softmax, confidence_thresh, rampup, teach
                 arch = 'mnist-bn-32-64-256'
             if exp in {'svhn_mnist', 'mnist_svhn'}:
                 arch = 'grey-32-64-128-gp'
-            if exp in {'cifar_stl', 'stl_cifar', 'syndigits_svhn'}:
+            if exp in {'cifar_stl', 'stl_cifar', 'syndigits_svhn', 'svhn_mnist_rgb', 'mnist_svhn_rgb'}:
                 arch = 'rgb-128-256-down-gp'
             if exp in {'synsigns_gtsrb'}:
                 arch = 'rgb40-96-192-384-gp'
@@ -221,32 +218,19 @@ def experiment(exp, arch, loss, double_softmax, confidence_thresh, rampup, teach
             intens_scale_range_lower=tgt_intens_scale_range_lower, intens_scale_range_upper=tgt_intens_scale_range_upper,
             intens_offset_range_lower=tgt_intens_offset_range_lower,
             intens_offset_range_upper=tgt_intens_offset_range_upper,
-            constrain_hflip=tgt_cons_hflip, constrain_xlat=tgt_cons_xlat, constrain_affine=tgt_cons_affine,
-            constrain_intens_flip=tgt_cons_intens_flip,
-            constrain_intens_scale=tgt_cons_intens_scale, constrain_intens_offset=tgt_cons_intens_offset,
             gaussian_noise_std=tgt_gaussian_noise_std
         )
 
-        if unsup_data == 'target':
-            def augment(X_sup, y_sup, X_tgt):
-                X_sup = src_aug.augment(X_sup)
-                X_unsup_stu, X_unsup_tea = tgt_aug.augment_pair(X_tgt)
-                return X_sup, y_sup, X_unsup_stu, X_unsup_tea
-        elif unsup_data == 'both':
-            def augment(X_sup, y_sup, X_src, X_tgt):
-                X_sup = src_aug.augment(X_sup)
-                X_src_stu, X_src_tea = src_aug.augment_pair(X_src)
+        if combine_batches:
+            def augment(X_sup, y_src, X_tgt):
+                X_src_stu, X_src_tea = src_aug.augment_pair(X_sup)
                 X_tgt_stu, X_tgt_tea = tgt_aug.augment_pair(X_tgt)
-                return X_sup, y_sup, X_src_stu, X_src_tea, X_tgt_stu, X_tgt_tea
-        elif unsup_data == 'both_together':
-            def augment(X_sup, y_sup, X_src, X_tgt):
-                X_sup = src_aug.augment(X_sup)
-                X_unsup = np.append(X_src, X_tgt, axis=0)
-                X_unsup_stu, X_unsup_tea = tgt_aug.augment_pair(X_unsup)
-                return X_sup, y_sup, X_unsup_stu, X_unsup_tea
+                return X_src_stu, X_src_tea, y_src, X_tgt_stu, X_tgt_tea
         else:
-            print('Unknown value for unsup_data: {}'.format(unsup_data))
-            return
+            def augment(X_src, y_src, X_tgt):
+                X_src = src_aug.augment(X_src)
+                X_tgt_stu, X_tgt_tea = tgt_aug.augment_pair(X_tgt)
+                return X_src, y_src, X_tgt_stu, X_tgt_tea
 
 
         rampup_weight_in_list = [0]
@@ -299,31 +283,41 @@ def experiment(exp, arch, loss, double_softmax, confidence_thresh, rampup, teach
 
             return unsup_loss, conf_mask_count, unsup_mask_count
 
+        if combine_batches:
+            def f_train(X_src0, X_src1, y_src, X_tgt0, X_tgt1):
+                X_src0 = torch.autograd.Variable(torch.from_numpy(X_src0).cuda())
+                X_src1 = torch.autograd.Variable(torch.from_numpy(X_src1).cuda())
+                y_src = torch.autograd.Variable(torch.from_numpy(y_src).long().cuda())
+                X_tgt0 = torch.autograd.Variable(torch.from_numpy(X_tgt0).cuda())
+                X_tgt1 = torch.autograd.Variable(torch.from_numpy(X_tgt1).cuda())
 
-        if unsup_data == 'target' or unsup_data == 'both_together':
-            def f_train(X_sup, y_sup, X_unsup0, X_unsup1):
-                X_sup = torch.autograd.Variable(torch.from_numpy(X_sup).cuda())
-                y_sup = torch.autograd.Variable(torch.from_numpy(y_sup).long().cuda())
-                X_unsup0 = torch.autograd.Variable(torch.from_numpy(X_unsup0).cuda())
-                X_unsup1 = torch.autograd.Variable(torch.from_numpy(X_unsup1).cuda())
+                n_samples = X_src0.size()[0]
+                n_total = n_samples + X_tgt0.size()[0]
 
                 student_optimizer.zero_grad()
                 student_net.train(mode=True)
                 teacher_net.train(mode=True)
 
-                sup_logits_out = student_net(X_sup)
-                student_unsup_logits_out = student_net(X_unsup0)
-                student_unsup_prob_out = F.softmax(student_unsup_logits_out)
-                teacher_unsup_logits_out = teacher_net(X_unsup1)
-                teacher_unsup_prob_out = F.softmax(teacher_unsup_logits_out)
+                # Concatenate source and target mini-batches
+                X0 = torch.cat([X_src0, X_tgt0], 0)
+                X1 = torch.cat([X_src1, X_tgt1], 0)
+
+                student_logits_out = student_net(X0)
+                student_prob_out = F.softmax(student_logits_out)
+
+                src_logits_out = student_logits_out[:n_samples]
+                src_prob_out = student_prob_out[:n_samples]
+
+                teacher_logits_out = teacher_net(X1)
+                teacher_prob_out = F.softmax(teacher_logits_out)
 
                 # Supervised classification loss
                 if double_softmax:
-                    clf_loss = classification_criterion(F.softmax(sup_logits_out), y_sup)
+                    clf_loss = classification_criterion(src_prob_out, y_src)
                 else:
-                    clf_loss = classification_criterion(sup_logits_out, y_sup)
+                    clf_loss = classification_criterion(src_logits_out, y_src)
 
-                unsup_loss, conf_mask_count, unsup_mask_count = compute_aug_loss(student_unsup_prob_out, teacher_unsup_prob_out)
+                unsup_loss, conf_mask_count, unsup_mask_count = compute_aug_loss(student_prob_out, teacher_prob_out)
 
                 loss_expr = clf_loss + unsup_loss * unsup_weight
 
@@ -331,74 +325,56 @@ def experiment(exp, arch, loss, double_softmax, confidence_thresh, rampup, teach
                 student_optimizer.step()
                 teacher_optimizer.step()
 
-                n_samples = X_sup.size()[0]
-
-                outputs = [float(clf_loss.data.cpu().numpy()) * n_samples, float(unsup_loss.data.cpu().numpy()) * n_samples]
+                outputs = [float(clf_loss.data.cpu().numpy()) * n_samples, float(unsup_loss.data.cpu().numpy()) * n_total]
                 if not use_rampup:
-                    if unsup_data == 'target':
-                        mask_count = conf_mask_count.data.cpu()[0]
-                        unsup_count = unsup_mask_count.data.cpu()[0]
-                    elif unsup_data == 'both_together':
-                        mask_count = conf_mask_count.data.cpu()[0] * 0.5
-                        unsup_count = unsup_mask_count.data.cpu()[0] * 0.5
+                    mask_count = conf_mask_count.data.cpu()[0] * 0.5
+                    unsup_count = unsup_mask_count.data.cpu()[0] * 0.5
 
                     outputs.append(mask_count)
                     outputs.append(unsup_count)
                 return tuple(outputs)
-        elif unsup_data == 'both':
-            def f_train(X_sup, y_sup, X_src0, X_src1, X_tgt0, X_tgt1):
-                X_sup = torch.autograd.Variable(torch.from_numpy(X_sup).cuda())
-                y_sup = torch.autograd.Variable(torch.from_numpy(y_sup).long().cuda())
-                X_src0 = torch.autograd.Variable(torch.from_numpy(X_src0).cuda())
-                X_src1 = torch.autograd.Variable(torch.from_numpy(X_src1).cuda())
+        else:
+            def f_train(X_src, y_src, X_tgt0, X_tgt1):
+                X_src = torch.autograd.Variable(torch.from_numpy(X_src).cuda())
+                y_src = torch.autograd.Variable(torch.from_numpy(y_src).long().cuda())
                 X_tgt0 = torch.autograd.Variable(torch.from_numpy(X_tgt0).cuda())
                 X_tgt1 = torch.autograd.Variable(torch.from_numpy(X_tgt1).cuda())
 
                 student_optimizer.zero_grad()
                 student_net.train(mode=True)
+                teacher_net.train(mode=True)
 
-                sup_logits_out = student_net(X_sup)
-                src_student_logits_out = student_net(X_src0)
-                src_student_prob_out = F.softmax(src_student_logits_out)
-                src_teacher_logits_out = teacher_net(X_src1)
-                src_teacher_prob_out = F.softmax(src_teacher_logits_out)
-                tgt_student_logits_out = student_net(X_tgt0)
-                tgt_student_prob_out = F.softmax(tgt_student_logits_out)
-                tgt_teacher_logits_out = teacher_net(X_tgt1)
-                tgt_teacher_prob_out = F.softmax(tgt_teacher_logits_out)
+                src_logits_out = student_net(X_src)
+                student_tgt_logits_out = student_net(X_tgt0)
+                student_tgt_prob_out = F.softmax(student_tgt_logits_out)
+                teacher_tgt_logits_out = teacher_net(X_tgt1)
+                teacher_tgt_prob_out = F.softmax(teacher_tgt_logits_out)
 
                 # Supervised classification loss
                 if double_softmax:
-                    clf_loss = classification_criterion(F.softmax(sup_logits_out), y_sup)
+                    clf_loss = classification_criterion(F.softmax(src_logits_out), y_src)
                 else:
-                    clf_loss = classification_criterion(sup_logits_out, y_sup)
+                    clf_loss = classification_criterion(src_logits_out, y_src)
 
-                src_unsup_loss, src_conf_mask_count, src_unsup_mask_count = compute_aug_loss(src_student_prob_out, src_teacher_prob_out)
-                tgt_unsup_loss, tgt_conf_mask_count, tgt_unsup_mask_count = compute_aug_loss(tgt_student_prob_out, tgt_teacher_prob_out)
+                unsup_loss, conf_mask_count, unsup_mask_count = compute_aug_loss(student_tgt_prob_out, teacher_tgt_prob_out)
 
-                loss_expr = clf_loss + (src_unsup_loss + tgt_unsup_loss) * unsup_weight
+                loss_expr = clf_loss + unsup_loss * unsup_weight
 
                 loss_expr.backward()
                 student_optimizer.step()
                 teacher_optimizer.step()
 
-                n_samples = X_sup.size()[0]
+                n_samples = X_src.size()[0]
 
-                outputs = [float(clf_loss.data.cpu().numpy()) * n_samples,
-                           float(src_unsup_loss.data.cpu().numpy()) * n_samples,
-                           float(tgt_unsup_loss.data.cpu().numpy()) * n_samples,
-                           ]
+                outputs = [float(clf_loss.data.cpu().numpy()) * n_samples, float(unsup_loss.data.cpu().numpy()) * n_samples]
                 if not use_rampup:
-                    src_mask_count = float(src_conf_mask_count.data.cpu().numpy())
-                    tgt_mask_count = float(tgt_conf_mask_count.data.cpu().numpy())
-                    src_unsup_count = float(src_unsup_mask_count.data.cpu().numpy())
-                    tgt_unsup_count = float(tgt_unsup_mask_count.data.cpu().numpy())
-                    outputs.append((src_mask_count + tgt_mask_count) * 0.5)
-                    outputs.append((src_unsup_count + tgt_unsup_count) * 0.5)
+                    mask_count = conf_mask_count.data.cpu()[0]
+                    unsup_count = unsup_mask_count.data.cpu()[0]
+
+                    outputs.append(mask_count)
+                    outputs.append(unsup_count)
                 return tuple(outputs)
-        else:
-            print('Unknown value for unsup_data: {}'.format(unsup_data))
-            return
+
 
         print('Compiled training function')
 
@@ -437,6 +413,7 @@ def experiment(exp, arch, loss, double_softmax, confidence_thresh, rampup, teach
                     f.write(text + '\n')
                     f.flush()
                     f.close()
+        cmdline_helpers.ensure_containing_dir_exists(log_file)
 
         # Report setttings
         log('Settings: {}'.format(', '.join(['{}={}'.format(key, settings[key]) for key in sorted(list(settings.keys()))])))
@@ -451,14 +428,7 @@ def experiment(exp, arch, loss, double_softmax, confidence_thresh, rampup, teach
         print('Training...')
         sup_ds = data_source.ArrayDataSource([d_source.train_X, d_source.train_y], repeats=-1)
         tgt_train_ds = data_source.ArrayDataSource([d_target.train_X], repeats=-1)
-        if unsup_data == 'target':
-            train_ds = data_source.CompositeDataSource([sup_ds, tgt_train_ds]).map(augment)
-        elif unsup_data == 'both' or unsup_data == 'both_together':
-            src_train_ds = data_source.ArrayDataSource([d_source.train_X], repeats=-1)
-            train_ds = data_source.CompositeDataSource([sup_ds, src_train_ds, tgt_train_ds]).map(augment)
-        else:
-            print('Unknown value for unsup_data: {}'.format(unsup_data))
-            return
+        train_ds = data_source.CompositeDataSource([sup_ds, tgt_train_ds]).map(augment)
         train_ds = pool.parallel_data_source(train_ds)
         if epoch_size == 'large':
             n_samples = max(d_source.train_X.shape[0], d_target.train_X.shape[0])
@@ -499,17 +469,13 @@ def experiment(exp, arch, loss, double_softmax, confidence_thresh, rampup, teach
             train_res = data_source.batch_map_mean(f_train, train_batch_iter, n_batches=n_train_batches)
 
             train_clf_loss = train_res[0]
-            if unsup_data == 'target':
-                unsup_loss_string = 'unsup (tgt) loss={:.6f}'.format(train_res[1])
-            elif unsup_data == 'both':
-                unsup_loss_string = 'unsup (src) loss={:.6f}, unsup (tgt) loss={:.6f}'.format(train_res[1], train_res[2])
-            elif unsup_data == 'both_together':
+            if combine_batches:
                 unsup_loss_string = 'unsup (both) loss={:.6f}'.format(train_res[1])
             else:
-                raise RuntimeError
+                unsup_loss_string = 'unsup (tgt) loss={:.6f}'.format(train_res[1])
 
-            src_test_err_stu, src_test_err_tea = source_test_ds.batch_map_mean(f_eval_src, batch_size=batch_size * 4)
-            tgt_test_err_stu, tgt_test_err_tea = target_test_ds.batch_map_mean(f_eval_tgt, batch_size=batch_size * 4)
+            src_test_err_stu, src_test_err_tea = source_test_ds.batch_map_mean(f_eval_src, batch_size=batch_size * 2)
+            tgt_test_err_stu, tgt_test_err_tea = target_test_ds.batch_map_mean(f_eval_tgt, batch_size=batch_size * 2)
 
 
             if use_rampup:
@@ -541,6 +507,7 @@ def experiment(exp, arch, loss, double_softmax, confidence_thresh, rampup, teach
 
         # Save network
         if model_file != '':
+            cmdline_helpers.ensure_containing_dir_exists(model_file)
             with open(model_file, 'wb') as f:
                 pickle.dump(best_teacher_model_state, f)
 

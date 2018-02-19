@@ -53,6 +53,19 @@ def cat_nx2x3(a, b):
     abx = ax + np.matmul(a2, bx)
     return np.append(ab2, abx, axis=2)
 
+def rotation_matrices(thetas):
+    """
+    Generate rotation matrices
+    :param thetas: rotation angles in radians as a (N,) array
+    :return: rotation matrices, (N,2,3) array
+    """
+    N = thetas.shape[0]
+    rot_xf = np.zeros((N, 2, 3), dtype=np.float32)
+    rot_xf[:, 0, 0] = rot_xf[:, 1, 1] = np.cos(thetas)
+    rot_xf[:, 1, 0] = np.sin(thetas)
+    rot_xf[:, 0, 1] = -np.sin(thetas)
+    return rot_xf
+
 def centre_xf(xf, size):
     """
     Centre the transformations in `xf` around (0,0), where the current centre is assumed to be at the
@@ -80,18 +93,16 @@ def centre_xf(xf, size):
 
 
 class ImageAugmentation (object):
-    def __init__(self, hflip, xlat_range, affine_std,
+    def __init__(self, hflip, xlat_range, affine_std, rot_std=0.0,
                  intens_flip=False,
                  intens_scale_range_lower=None, intens_scale_range_upper=None,
                  intens_offset_range_lower=None, intens_offset_range_upper=None,
                  scale_x_range=None, scale_y_range=None, scale_u_range=None, gaussian_noise_std=0.0,
-                 blur_range=None,
-                 constrain_hflip=False, constrain_xlat=False, constrain_affine=False,
-                 constrain_intens_flip=False, constrain_intens_scale=False, constrain_intens_offset=False,
-                 constrain_scale=False):
+                 blur_range=None):
         self.hflip = hflip
         self.xlat_range = xlat_range
         self.affine_std = affine_std
+        self.rot_std = rot_std
         self.intens_scale_range_lower = intens_scale_range_lower
         self.intens_scale_range_upper = intens_scale_range_upper
         self.intens_offset_range_lower = intens_offset_range_lower
@@ -102,14 +113,6 @@ class ImageAugmentation (object):
         self.scale_u_range = scale_u_range
         self.gaussian_noise_std = gaussian_noise_std
         self.blur_range = blur_range
-
-        self.constrain_hflip = constrain_hflip
-        self.constrain_xlat = constrain_xlat
-        self.constrain_affine = constrain_affine
-        self.constrain_intens_flip = constrain_intens_flip
-        self.constrain_intens_scale = constrain_intens_scale
-        self.constrain_intens_offset = constrain_intens_offset
-        self.constrain_scale = constrain_scale
 
 
     def augment(self, X):
@@ -131,6 +134,12 @@ class ImageAugmentation (object):
 
         if self.affine_std > 0.0:
             xf[:, :, :2] += np.random.normal(scale=self.affine_std, size=(len(X), 2, 2))
+
+        if self.rot_std > 0.0:
+            thetas = np.random.normal(scale=self.rot_std, size=(len(X),))
+            rot_xf = rotation_matrices(thetas)
+            xf = cat_nx2x3(xf, rot_xf)
+
         if self.xlat_range > 0.0:
             xf[:, :, 2:] += np.random.uniform(low=-self.xlat_range, high=self.xlat_range, size=(len(X), 2, 1))
 
@@ -152,15 +161,22 @@ class ImageAugmentation (object):
 
         xf_centred = centre_xf(xf, X.shape[2:])
         for i in range(len(X)):
-            X[i, 0, :, :] = cv2.warpAffine(X[i, 0, :, :], xf_centred[i, :, :], (X.shape[3], X.shape[2]))
+            if X.shape[1] == 1:
+                X[i, 0, :, :] = cv2.warpAffine(X[i, 0, :, :], xf_centred[i, :, :], (X.shape[3], X.shape[2]))
+            else:
+                X[i, :, :, :] = cv2.warpAffine(X[i, :, :, :].transpose(1,2,0), xf_centred[i, :, :], (X.shape[3], X.shape[2])).transpose(2,0,1)
 
-        if self.blur_range is not None:
+        if self.blur_range is not None and self.blur_range[0] is not None:
             sigmas = np.random.uniform(low=self.blur_range[0], high=self.blur_range[1], size=(len(X),))
             sigmas = np.maximum(sigmas, 0.0)
             for i in range(len(X)):
                 sigma = sigmas[i]
-                ksize = int(sigma * 8) + 1
-                X[i, 0, :, :] = cv2.GaussianBlur(X[i, 0, :, :], (ksize, ksize), sigmaX=sigma)
+                # ksize must be odd number
+                ksize = int(sigma+0.5) * 8 + 1
+                if X.shape[1] == 1:
+                    X[i, 0, :, :] = cv2.GaussianBlur(X[i, 0, :, :], (ksize, ksize), sigmaX=sigma)
+                else:
+                    X[i, :, :, :] = cv2.GaussianBlur(X[i, :, :, :].transpose(1,2,0), (ksize, ksize), sigmaX=sigma).transpose(2,0,1)
 
         if self.gaussian_noise_std > 0.0:
             X += np.random.normal(scale=self.gaussian_noise_std, size=X.shape).astype(np.float32)
@@ -169,123 +185,5 @@ class ImageAugmentation (object):
 
 
     def augment_pair(self, X):
-        X0 = X.copy()
-        X1 = X.copy()
-        xf0 = identity_xf(len(X))
-        xf1 = identity_xf(len(X))
+        return self.augment(X), self.augment(X)
 
-        if self.hflip:
-            if self.constrain_hflip:
-                x_hflip = np.random.binomial(1, 0.5, size=(len(X),)) * 2 - 1
-                xf0[:, 0, 0] = xf1[:, 0, 0] = x_hflip
-            else:
-                x_hflip0 = np.random.binomial(1, 0.5, size=(len(X),)) * 2 - 1
-                x_hflip1 = np.random.binomial(1, 0.5, size=(len(X),)) * 2 - 1
-                xf0[:, 0, 0] = x_hflip0
-                xf1[:, 0, 0] = x_hflip1
-
-        if self.scale_x_range is not None and self.scale_x_range[0] is not None:
-            if self.constrain_scale:
-                scale_x = np.random.uniform(low=self.scale_x_range[0], high=self.scale_x_range[1], size=(len(X),))
-                xf0[:, 0, 0] *= scale_x
-                xf1[:, 0, 0] *= scale_x
-            else:
-                xf0[:, 0, 0] *= np.random.uniform(low=self.scale_x_range[0], high=self.scale_x_range[1], size=(len(X),))
-                xf1[:, 0, 0] *= np.random.uniform(low=self.scale_x_range[0], high=self.scale_x_range[1], size=(len(X),))
-
-        if self.scale_y_range is not None and self.scale_y_range[0] is not None:
-            if self.constrain_scale:
-                scale_y = np.random.uniform(low=self.scale_y_range[0], high=self.scale_y_range[1], size=(len(X),))
-                xf0[:, 1, 1] *= scale_y
-                xf1[:, 1, 1] *= scale_y
-            else:
-                xf0[:, 1, 1] *= np.random.uniform(low=self.scale_y_range[0], high=self.scale_y_range[1], size=(len(X),))
-                xf1[:, 1, 1] *= np.random.uniform(low=self.scale_y_range[0], high=self.scale_y_range[1], size=(len(X),))
-
-        if self.scale_u_range is not None and self.scale_u_range[0] is not None:
-            if self.constrain_scale:
-                scale_u = np.random.uniform(low=self.scale_u_range[0], high=self.scale_u_range[1], size=(len(X),))
-                xf0[:, 0, 0] *= scale_u
-                xf0[:, 1, 1] *= scale_u
-                xf1[:, 0, 0] *= scale_u
-                xf1[:, 1, 1] *= scale_u
-            else:
-                scale_u0 = np.random.uniform(low=self.scale_u_range[0], high=self.scale_u_range[1], size=(len(X),))
-                scale_u1 = np.random.uniform(low=self.scale_u_range[0], high=self.scale_u_range[1], size=(len(X),))
-                xf0[:, 0, 0] *= scale_u0
-                xf0[:, 1, 1] *= scale_u0
-                xf1[:, 0, 0] *= scale_u1
-                xf1[:, 1, 1] *= scale_u1
-
-        if self.affine_std > 0.0:
-            if self.constrain_affine:
-                affine = np.random.normal(scale=self.affine_std, size=(len(X), 2, 2))
-                xf0[:, :, :2] += affine
-                xf1[:, :, :2] += affine
-            else:
-                xf0[:, :, :2] += np.random.normal(scale=self.affine_std, size=(len(X), 2, 2))
-                xf1[:, :, :2] += np.random.normal(scale=self.affine_std, size=(len(X), 2, 2))
-
-        if self.xlat_range > 0.0:
-            if self.constrain_xlat:
-                xlat = np.random.uniform(low=-self.xlat_range, high=self.xlat_range, size=(len(X), 2, 1))
-                xf0[:, :, 2:] += xlat
-                xf1[:, :, 2:] += xlat
-            else:
-                xf0[:, :, 2:] += np.random.uniform(low=-self.xlat_range, high=self.xlat_range, size=(len(X), 2, 1))
-                xf1[:, :, 2:] += np.random.uniform(low=-self.xlat_range, high=self.xlat_range, size=(len(X), 2, 1))
-
-        if self.intens_flip:
-            if self.constrain_intens_flip:
-                col_factor = (np.random.binomial(1, 0.5, size=(len(X), 1, 1, 1)) * 2 - 1).astype(np.float32)
-                X0 = (X0 * col_factor).astype(np.float32)
-                X1 = (X1 * col_factor).astype(np.float32)
-            else:
-                col_factor0 = (np.random.binomial(1, 0.5, size=(len(X), 1, 1, 1)) * 2 - 1).astype(np.float32)
-                col_factor1 = (np.random.binomial(1, 0.5, size=(len(X), 1, 1, 1)) * 2 - 1).astype(np.float32)
-                X0 = (X0 * col_factor0).astype(np.float32)
-                X1 = (X1 * col_factor1).astype(np.float32)
-
-        if self.intens_scale_range_lower is not None:
-            if self.constrain_intens_scale:
-                col_factor = np.random.uniform(low=self.intens_scale_range_lower, high=self.intens_scale_range_upper,
-                                               size=(len(X), 1, 1, 1))
-
-                X0 = (X0 * col_factor).astype(np.float32)
-                X1 = (X1 * col_factor).astype(np.float32)
-            else:
-                col_factor0 = np.random.uniform(low=self.intens_scale_range_lower, high=self.intens_scale_range_upper,
-                                                size=(len(X), 1, 1, 1))
-                col_factor1 = np.random.uniform(low=self.intens_scale_range_lower, high=self.intens_scale_range_upper,
-                                                size=(len(X), 1, 1, 1))
-
-                X0 = (X0 * col_factor0).astype(np.float32)
-                X1 = (X1 * col_factor1).astype(np.float32)
-
-        if self.intens_offset_range_lower is not None:
-            if self.constrain_intens_offset:
-                col_offset = np.random.uniform(low=self.intens_offset_range_lower, high=self.intens_offset_range_upper,
-                                               size=(len(X), 1, 1, 1))
-
-                X0 = (X0 + col_offset).astype(np.float32)
-                X1 = (X1 + col_offset).astype(np.float32)
-            else:
-                col_offset0 = np.random.uniform(low=self.intens_offset_range_lower, high=self.intens_offset_range_upper,
-                                                size=(len(X), 1, 1, 1))
-                col_offset1 = np.random.uniform(low=self.intens_offset_range_lower, high=self.intens_offset_range_upper,
-                                                size=(len(X), 1, 1, 1))
-
-                X0 = (X0 + col_offset0).astype(np.float32)
-                X1 = (X1 + col_offset1).astype(np.float32)
-
-        xf0_centred = centre_xf(xf0, X.shape[2:])
-        xf1_centred = centre_xf(xf1, X.shape[2:])
-        for i in range(len(X)):
-            X0[i, 0, :, :] = cv2.warpAffine(X0[i, 0, :, :], xf0_centred[i, :, :], (X0.shape[3], X0.shape[2]))
-            X1[i, 0, :, :] = cv2.warpAffine(X1[i, 0, :, :], xf1_centred[i, :, :], (X1.shape[3], X1.shape[2]))
-
-        if self.gaussian_noise_std > 0.0:
-            X0 += np.random.normal(scale=self.gaussian_noise_std, size=X0.shape).astype(np.float32)
-            X1 += np.random.normal(scale=self.gaussian_noise_std, size=X1.shape).astype(np.float32)
-
-        return X0, X1

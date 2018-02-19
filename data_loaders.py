@@ -10,7 +10,7 @@ def rgb2grey_tensor(X):
     return (X[:, 0:1, :, :] * 0.2125) + (X[:, 1:2, :, :] * 0.7154) + (X[:, 2:3, :, :] * 0.0721)
 
 # Dataset loading functions
-def load_svhn(zero_centre=False, greyscale=False, val=False):
+def load_svhn(zero_centre=False, greyscale=False, val=False, extra=False):
     #
     #
     # Load SVHN
@@ -23,12 +23,21 @@ def load_svhn(zero_centre=False, greyscale=False, val=False):
     else:
         d_svhn = svhn.SVHN(n_val=0)
 
+    if extra:
+        d_extra = svhn.SVHNExtra()
+    else:
+        d_extra = None
+
     d_svhn.train_X = d_svhn.train_X[:]
     d_svhn.val_X = d_svhn.val_X[:]
     d_svhn.test_X = d_svhn.test_X[:]
     d_svhn.train_y = d_svhn.train_y[:]
     d_svhn.val_y = d_svhn.val_y[:]
     d_svhn.test_y = d_svhn.test_y[:]
+
+    if extra:
+        d_svhn.train_X = np.append(d_svhn.train_X, d_extra.X[:], axis=0)
+        d_svhn.train_y = np.append(d_svhn.train_y, d_extra.y[:], axis=0)
 
     if greyscale:
         d_svhn.train_X = rgb2grey_tensor(d_svhn.train_X)
@@ -52,7 +61,8 @@ def load_svhn(zero_centre=False, greyscale=False, val=False):
     return d_svhn
 
 
-def load_mnist(invert=False, zero_centre=False, intensity_scale=1.0, val=False, pad32=False, downscale_x=1):
+def load_mnist(invert=False, zero_centre=False, intensity_scale=1.0, val=False, pad32=False, downscale_x=1,
+               rgb=False):
     #
     #
     # Load MNIST
@@ -100,6 +110,11 @@ def load_mnist(invert=False, zero_centre=False, intensity_scale=1.0, val=False, 
     if zero_centre:
         d_mnist.train_X = d_mnist.train_X * 2.0 - 1.0
         d_mnist.test_X = d_mnist.test_X * 2.0 - 1.0
+
+    if rgb:
+        d_mnist.train_X = np.concatenate([d_mnist.train_X] * 3, axis=1)
+        d_mnist.val_X = np.concatenate([d_mnist.val_X] * 3, axis=1)
+        d_mnist.test_X = np.concatenate([d_mnist.test_X] * 3, axis=1)
 
     print('MNIST: train: X.shape={}, y.shape={}, val: X.shape={}, y.shape={}, test: X.shape={}, y.shape={}'.format(
         d_mnist.train_X.shape, d_mnist.train_y.shape,

@@ -1,4 +1,4 @@
-
+import os
 
 def intens_aug_options(intens_scale_range, intens_offset_range):
     intens_scale_range_lower = intens_scale_range_upper = None
@@ -45,3 +45,10 @@ def colon_separated_range(x):
             return
 
     return lower, upper
+
+
+def ensure_containing_dir_exists(path):
+    dir_name = os.path.dirname(path)
+    if dir_name != '' and not os.path.exists(dir_name):
+        os.makedirs(dir_name)
+    return path
