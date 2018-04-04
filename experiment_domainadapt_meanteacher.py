@@ -32,6 +32,10 @@ import click
 @click.option('--rampup', type=int, default=0, help='ramp-up length')
 @click.option('--teacher_alpha', type=float, default=0.99, help='Teacher EMA alpha (decay)')
 @click.option('--unsup_weight', type=float, default=3.0, help='unsupervised loss weight')
+@click.option('--cls_bal_scale', is_flag=True, default=False,
+              help='Enable scaling unsupervised loss to counteract class imbalance')
+@click.option('--cls_bal_scale_range', type=float, default=0.0,
+              help='If not 0, clamp class imbalance scale to between x and 1/x where x is this value')
 @click.option('--cls_balance', type=float, default=0.005,
               help='Weight of class balancing component of unsupervised loss')
 @click.option('--cls_balance_loss', type=click.Choice(['bce', 'log', 'bug']), default='bce',
@@ -71,7 +75,7 @@ import click
 @click.option('--model_file', type=str, default='', help='model file path')
 @click.option('--device', type=int, default=0, help='Device')
 def experiment(exp, arch, loss, double_softmax, confidence_thresh, rampup, teacher_alpha,
-               unsup_weight, cls_balance, cls_balance_loss,
+               unsup_weight, cls_bal_scale, cls_bal_scale_range, cls_balance, cls_balance_loss,
                combine_batches,
                learning_rate, standardise_samples,
                src_affine_std, src_xlat_range, src_hflip,
@@ -255,6 +259,18 @@ def experiment(exp, arch, loss, double_softmax, confidence_thresh, rampup, teach
             else:
                 d_aug_loss = stu_out - tea_out
                 aug_loss = d_aug_loss * d_aug_loss
+
+            # Class balance scaling
+            if cls_bal_scale:
+                if use_rampup:
+                    n_samples = float(aug_loss.size()[0])
+                else:
+                    n_samples = unsup_mask.sum()
+                avg_pred = n_samples / float(n_classes)
+                bal_scale = avg_pred / torch.clamp(tea_out.sum(dim=0), min=1.0)
+                if cls_bal_scale_range != 0.0:
+                    bal_scale = torch.clamp(bal_scale, min=1.0/cls_bal_scale_range, max=cls_bal_scale_range)
+                aug_loss = aug_loss * bal_scale[None, :]
 
             aug_loss = torch.mean(aug_loss, 1)
 
