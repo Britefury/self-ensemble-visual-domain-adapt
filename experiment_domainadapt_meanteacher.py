@@ -270,6 +270,7 @@ def experiment(exp, arch, loss, double_softmax, confidence_thresh, rampup, teach
                 bal_scale = avg_pred / torch.clamp(tea_out.sum(dim=0), min=1.0)
                 if cls_bal_scale_range != 0.0:
                     bal_scale = torch.clamp(bal_scale, min=1.0/cls_bal_scale_range, max=cls_bal_scale_range)
+                bal_scale = bal_scale.detach()
                 aug_loss = aug_loss * bal_scale[None, :]
 
             aug_loss = torch.mean(aug_loss, 1)
