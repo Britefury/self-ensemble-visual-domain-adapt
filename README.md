@@ -67,3 +67,85 @@ To re-create the supervised baseline experiments:
 
 Please see the contents of the shell scripts to see the command line options used to control the
 experiments.
+
+
+## Syn-Digits, GTSTB and Syn-Signs datasets
+
+You will need to download the Syn-Digits, GTSRB and Syn-signs datasets. After this you will need to create
+the file `domain_datasets.cfg` to tell the software where to find them.
+
+The following assumes that you have a directory called `data` in which you will store these three datasets.
+
+### Syn-digits
+
+Download Syn-digits from [http://yaroslav.ganin.net](http://yaroslav.ganin.net), on which you will find a Google Drive
+link to a file called `SynthDigits.zip`. Create a directory call `syndigits` within `data` and unzip `SynthDigits.zip`
+within it.
+
+### GTSRB
+
+Download GTSRB from [http://benchmark.ini.rub.de/?section=gtsrb&subsection=dataset](http://benchmark.ini.rub.de/?section=gtsrb&subsection=dataset)
+and get the training 'Images and annotations' (`GTSRB_Final_Training_Images.zip`), Test 'images and annotations' (`GTSRB_Final_Test_Images.zip`)
+and the test 'extended annotations including class IDs' (`GTSRB_Final_Test_GT.zip`).
+
+Unzip the three files within the `data` directory. You should end up with the following directory structure:
+
+```
+GTSRB/
+GTSRB/Final_Training/
+GTSRB/Final_Training/Images/   -- training set images
+GTSRB/Final_Training/Images/00000/   -- one directory for each class, contains image files
+GTSRB/Final_Training/Images/00001/
+...
+GTSRB/Final_Training/Images/00042/
+GTSRB/Final_Test/
+GTSRB/Final_Test/Images/   -- test set images
+GTSRB/GT-final_test.csv   -- test set ground truths
+GTSRB/Readme-Images.txt
+GTSRB/Readme-Images-Final-test.txt
+``` 
+
+#### Prepare GTSRB
+
+Convert GTSRB to the required format using:
+
+```sh
+> python prepare_gtsrb.py
+```
+
+### Syn-signs
+
+You will need to acquire this dataset from someone else who has it, since there is no download link. Its normally
+called `synthetic_data.zip`. Create a directory called `synsigns` within data and unzip `synthetic_data.zip` within
+`data/synsigns` to get the following:
+
+```
+synthetic_data/
+synthetic_data/train/   -- contains the images as PNGs
+synthetic_data/train_labelling.txt   -- ground truths
+```
+
+#### Prepare Syn-signs
+
+Convert Syn-signs to the required format using:
+
+```sh
+> python prepare_synsigns.py
+```
+
+
+### Create `domain_datasets.cfg`
+
+Create the configuration file `domain_datasets.cfg` within the same directory as the experiment scripts.
+Put the following into it (change the paths if they are different):
+
+```cfg
+[paths]
+syn_digits=data/syndigits
+gtsrb=data/GTSRB
+syn_signs=data/synsigns
+```
+
+
+
+
