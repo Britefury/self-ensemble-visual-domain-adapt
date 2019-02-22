@@ -31,6 +31,7 @@ import click
 @click.option('--confidence_thresh', type=float, default=0.96837722, help='augmentation var loss confidence threshold')
 @click.option('--rampup', type=int, default=0, help='ramp-up length')
 @click.option('--teacher_alpha', type=float, default=0.99, help='Teacher EMA alpha (decay)')
+@click.option('--fix_ema', is_flag=True, default=False, help='Use fixed EMA')
 @click.option('--unsup_weight', type=float, default=3.0, help='unsupervised loss weight')
 @click.option('--cls_bal_scale', is_flag=True, default=False,
               help='Enable scaling unsupervised loss to counteract class imbalance')
@@ -74,7 +75,7 @@ import click
 @click.option('--log_file', type=str, default='', help='log file path (none to disable)')
 @click.option('--model_file', type=str, default='', help='model file path')
 @click.option('--device', type=int, default=0, help='Device')
-def experiment(exp, arch, loss, double_softmax, confidence_thresh, rampup, teacher_alpha,
+def experiment(exp, arch, loss, double_softmax, confidence_thresh, rampup, teacher_alpha, fix_ema,
                unsup_weight, cls_bal_scale, cls_bal_scale_range, cls_balance, cls_balance_loss,
                combine_batches,
                learning_rate, standardise_samples,
@@ -203,7 +204,10 @@ def experiment(exp, arch, loss, double_softmax, confidence_thresh, rampup, teach
             param.requires_grad = False
 
         student_optimizer = torch.optim.Adam(student_params, lr=learning_rate)
-        teacher_optimizer = optim_weight_ema.WeightEMA(teacher_params, student_params, alpha=teacher_alpha)
+        if fix_ema:
+            teacher_optimizer = optim_weight_ema.EMAWeightOptimizer(teacher_net, student_net, alpha=teacher_alpha)
+        else:
+            teacher_optimizer = optim_weight_ema.OldWeightEMA(teacher_net, student_net, alpha=teacher_alpha)
         classification_criterion = nn.CrossEntropyLoss()
 
         print('Built network')
