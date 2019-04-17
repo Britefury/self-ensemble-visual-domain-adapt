@@ -32,13 +32,7 @@ download the OpenCV wheel file and install with:
 
 ### PyTorch
 
-On Linux:
-
-```> conda install pytorch torchvision -c pytorch```
-
-On Windows:
-
-```> conda install -c peterjc123 pytorch cuda90```
+For installation instructions head over to the [PyTorch](https://pytorch.org/) website.
 
 ### The rest
 
@@ -54,10 +48,10 @@ The experiments in our paper can be re-created by running the `batch_search_exp.
 
 ```bash batch_search_exp.sh <GPU> <RUN>```
 
-Where `<GPU>` is an integer identifying the GPU to use and <RUN> enumerates the experiment number so that
+Where `<GPU>` is a string identifying the GPU to use (e.g. `cuda:0`) and <RUN> enumerates the experiment number so that
 you can keep logs of multiple repeated runs separate, e.g.:
 
-```bash batch_search_exp.sh 0 01```
+```bash batch_search_exp.sh cuda:0 01```
 
 Will run on GPU 0 and will generate log files with names suffixed with `run01`.
 

@@ -114,7 +114,7 @@ class Grey_32_64_128_gp (nn.Module):
 
         x = F.relu(self.conv3_1_bn(self.conv3_1(x)))
         x = F.relu(self.conv3_2_bn(self.conv3_2(x)))
-        x = self.pool2(F.relu(self.conv3_3_bn(self.conv3_3(x))))
+        x = self.pool3(F.relu(self.conv3_3_bn(self.conv3_3(x))))
 
         x = F.avg_pool2d(x, 4)
         x = x.view(-1, 128)
@@ -180,7 +180,7 @@ class Grey_32_64_128_gp_wn (nn.Module):
 
         x = F.relu(self.conv3_1(x))
         x = F.relu(self.conv3_2(x))
-        x = self.pool2(F.relu(self.conv3_3(x)))
+        x = self.pool3(F.relu(self.conv3_3(x)))
 
         x = F.avg_pool2d(x, 4)
         x = x.view(-1, 128)
@@ -236,7 +236,7 @@ class Grey_32_64_128_gp_nonorm (nn.Module):
 
         x = F.relu(self.conv3_1(x))
         x = F.relu(self.conv3_2(x))
-        x = self.pool2(F.relu(self.conv3_3(x)))
+        x = self.pool3(F.relu(self.conv3_3(x)))
 
         x = F.avg_pool2d(x, 4)
         x = x.view(-1, 128)
@@ -289,7 +289,7 @@ class RGB_48_96_192_gp (nn.Module):
 
         x = F.relu(self.conv3_1_bn(self.conv3_1(x)))
         x = F.relu(self.conv3_2_bn(self.conv3_2(x)))
-        x = self.pool2(F.relu(self.conv3_3_bn(self.conv3_3(x))))
+        x = self.pool3(F.relu(self.conv3_3_bn(self.conv3_3(x))))
 
         x = F.avg_pool2d(x, 4)
         x = x.view(-1, 192)
