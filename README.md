@@ -108,10 +108,9 @@ Convert GTSRB to the required format using:
 ```
 
 ### Syn-signs
-
-You will need to acquire this dataset from someone else who has it, since there is no download link. Its normally
-called `synthetic_data.zip`. Create a directory called `synsigns` within data and unzip `synthetic_data.zip` within
-`data/synsigns` to get the following:
+Download Syn-signs from [http://graphics.cs.msu.ru/en/node/1337/](http://graphics.cs.msu.ru/en/node/1337/).
+You should get a file called `synthetic_data.zip`. Create a directory called `synsigns` within data and unzip
+`synthetic_data.zip` within `data/synsigns` to get the following:
 
 ```
 synthetic_data/
